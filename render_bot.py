@@ -129,33 +129,40 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def run_flask_app():
     """تشغيل تطبيق Flask"""
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    print(f"🌐 بدء خادم Flask على المنفذ {port}")
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 def run_bot():
     """تشغيل بوت التلجرام"""
-    application = Application.builder().token(TOKEN).build()
-    application.add_handler(CommandHandler("start", start_command))
-    
-    job_queue = application.job_queue
-    if job_queue:
-        # إرسال رسالة كل ساعة (3600 ثانية)
-        job_queue.run_repeating(send_to_channel, interval=3600, first=5)
-        print("✅ تم تفعيل الجدولة التلقائية - رسائل كل ساعة")
-    
-    print("🤖 بوت التلجرام يعمل على Render...")
-    application.run_polling()
+    try:
+        application = Application.builder().token(TOKEN).build()
+        application.add_handler(CommandHandler("start", start_command))
+        
+        job_queue = application.job_queue
+        if job_queue:
+            # إرسال رسالة كل ساعة (3600 ثانية)
+            job_queue.run_repeating(send_to_channel, interval=3600, first=5)
+            print("✅ تم تفعيل الجدولة التلقائية - رسائل كل ساعة")
+        
+        print("🤖 بوت التلجرام يعمل على Render...")
+        application.run_polling()
+    except Exception as e:
+        print(f"❌ خطأ في تشغيل البوت: {e}")
+        bot_data["status"] = f"🔴 خطأ: {str(e)}"
 
 if __name__ == "__main__":
-    # في Render، نستخدم المتغير البيئي لتحديد أي جزء يشغل
-    if os.environ.get('RENDER'):
-        # في Render، شغّل Flask فقط
-        print("🚀 بدء التشغيل على Render...")
-        run_flask_app()
-    else:
-        # للتشغيل المحلي، شغّل كلا الجزئين
-        print("🖥️ بدء التشغيل المحلي...")
-        # تشغيل Flask في thread منفصل
-        flask_thread = threading.Thread(target=run_flask_app, daemon=True)
-        flask_thread.start()
-        # تشغيل البوت
-        run_bot()
+    print("🚀 بدء التشغيل الكامل على Render...")
+    
+    # تحديث حالة البوت
+    bot_data["status"] = "🟢 يعمل - البوت والويب معاً"
+    
+    # تشغيل Flask في thread منفصل
+    flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+    flask_thread.start()
+    
+    # تشغيل البوت بعد تأخير بسيط لضمان تشغيل Flask أولاً
+    import time
+    time.sleep(2)
+    
+    # تشغيل البوت
+    run_bot()
