@@ -5,6 +5,8 @@ import random
 import os
 from datetime import datetime
 import threading
+import requests
+import time
 
 # === إعدادات البوت ===
 TOKEN = "8446070901:AAEEl7gFxqyA_cExC5yGXzygAcZMdjIipmI"
@@ -19,7 +21,9 @@ bot_data = {
     "total_messages": 0,
     "status": "🟢 يعمل على Render",
     "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    "messages_history": []
+    "messages_history": [],
+    "monitor_pings": 0,
+    "last_ping": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 }
 
 islamic_messages = [
@@ -52,6 +56,7 @@ def home():
             h1 { color: #2c5aa0; }
             .stats { background: #e3f2fd; padding: 20px; border-radius: 10px; margin: 20px 0; }
             .message { background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 8px; border-right: 4px solid #2c5aa0; }
+            .monitor { background: #e8f5e8; padding: 15px; border-radius: 10px; margin: 15px 0; }
         </style>
     </head>
     <body>
@@ -67,6 +72,13 @@ def home():
                 <p><strong>الوقت:</strong> """ + bot_data["last_time"] + """</p>
                 <p><strong>الحالة:</strong> """ + bot_data["status"] + """</p>
             </div>
+
+            <div class="monitor">
+                <h3>📡 نظام المراقبة</h3>
+                <p><strong>عدد طلبات المراقبة:</strong> """ + str(bot_data["monitor_pings"]) + """</p>
+                <p><strong>آخر طلب مراقبة:</strong> """ + bot_data["last_ping"] + """</p>
+                <p><strong>نظام المراقبة نشط</strong> ✅ يمنع إيقاف الخدمة</p>
+            </div>
             
             <div class="message">
                 <h3>📨 آخر الرسائل</h3>
@@ -75,6 +87,7 @@ def home():
             </div>
             
             <p>⏰ البوت يرسل رسائل تلقائية كل ساعة إلى القناة</p>
+            <p>🔄 نظام المراقبة يعمل كل 10 دقائق للحفاظ على التشغيل</p>
         </div>
     </body>
     </html>
@@ -87,6 +100,14 @@ def api_data():
 @app.route('/api/health')
 def health_check():
     return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
+
+@app.route('/api/ping')
+def ping():
+    """نقطة نهاية للمراقبة"""
+    bot_data["monitor_pings"] += 1
+    bot_data["last_ping"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"🔄 [{datetime.now().strftime('%H:%M:%S')}] طلب مراقبة #{bot_data['monitor_pings']}")
+    return jsonify({"status": "pong", "pings": bot_data["monitor_pings"]})
 
 def update_bot_data(message):
     """تحديث بيانات البوت"""
@@ -150,19 +171,53 @@ def run_bot():
         print(f"❌ خطأ في تشغيل البوت: {e}")
         bot_data["status"] = f"🔴 خطأ: {str(e)}"
 
+def start_self_monitoring():
+    """بدء نظام المراقبة الذاتية"""
+    def monitor_loop():
+        # انتظر حتى يعمل الخادم
+        time.sleep(10)
+        
+        while True:
+            try:
+                # احصل على رابط التطبيق من متغير بيئي أو استخدم افتراضي
+                app_url = os.environ.get('RENDER_EXTERNAL_URL', 'https://your-app-name.onrender.com')
+                
+                # أرسل طلب مراقبة إلى التطبيق نفسه
+                response = requests.get(f"{app_url}/api/ping", timeout=10)
+                
+                if response.status_code == 200:
+                    print(f"📡 [{datetime.now().strftime('%H:%M:%S')}] المراقبة نشطة - طلب #{bot_data['monitor_pings']}")
+                else:
+                    print(f"⚠️  [{datetime.now().strftime('%H:%M:%S')}] استجابة مراقبة غير طبيعية: {response.status_code}")
+                    
+            except requests.exceptions.RequestException as e:
+                print(f"❌ [{datetime.now().strftime('%H:%M:%S')}] خطأ في المراقبة: {e}")
+            except Exception as e:
+                print(f"❌ [{datetime.now().strftime('%H:%M:%S')}] خطأ غير متوقع في المراقبة: {e}")
+            
+            # انتظر 10 دقائق قبل الطلب التالي
+            time.sleep(600)  # 600 ثانية = 10 دقائق
+    
+    # تشغيل المراقبة في thread منفصل
+    monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
+    monitor_thread.start()
+    print("🔄 بدء نظام المراقبة الذاتية (طلبات كل 10 دقائق)")
+
 if __name__ == "__main__":
     print("🚀 بدء التشغيل الكامل على Render...")
     
     # تحديث حالة البوت
-    bot_data["status"] = "🟢 يعمل - البوت والويب معاً"
+    bot_data["status"] = "🟢 يعمل - البوت والويب والمراقبة"
     
     # تشغيل Flask في thread منفصل
     flask_thread = threading.Thread(target=run_flask_app, daemon=True)
     flask_thread.start()
     
+    # بدء نظام المراقبة الذاتية
+    start_self_monitoring()
+    
     # تشغيل البوت بعد تأخير بسيط لضمان تشغيل Flask أولاً
-    import time
-    time.sleep(2)
+    time.sleep(5)
     
     # تشغيل البوت
     run_bot()
